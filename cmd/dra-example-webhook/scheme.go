@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhook
+package main
 
 import (
 	admissionv1 "k8s.io/api/admission/v1"
@@ -40,4 +40,5 @@ func addToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(admissionregistrationv1beta1.AddToScheme(scheme))
 	utilruntime.Must(admissionv1.AddToScheme(scheme))
 	utilruntime.Must(admissionregistrationv1.AddToScheme(scheme))
+
 }

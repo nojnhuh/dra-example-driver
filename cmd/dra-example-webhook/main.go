@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhook
+package main
 
 import (
 	"encoding/json"
@@ -27,19 +27,17 @@ import (
 
 	v1 "k8s.io/api/admission/v1"
 	"k8s.io/api/admission/v1beta1"
+	resourceapi "k8s.io/api/resource/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/klog/v2"
 
+	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
-var (
-	certFile     string
-	keyFile      string
-	port         int
-	sidecarImage string
-)
+const DriverName = "gpu.example.com"
 
 type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
@@ -95,12 +93,12 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
-			http.HandleFunc("/custom-resource", serveCustomResource)
+			http.HandleFunc("/validate-resource-claims", serveResourceClaim)
 			http.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) { w.Write([]byte("ok")) })
 			server := &http.Server{
-				Addr: fmt.Sprintf(":%d", port),
+				Addr: fmt.Sprintf(":%d", flags.port),
 			}
-			return server.ListenAndServeTLS(flags.certFile, keyFile)
+			return server.ListenAndServeTLS(flags.certFile, flags.keyFile)
 		},
 	}
 
@@ -206,16 +204,18 @@ func serve(w http.ResponseWriter, r *http.Request, admit admitHandler) {
 	}
 }
 
-func serveCustomResource(w http.ResponseWriter, r *http.Request) {
-	serve(w, r, newDelegateToV1AdmitHandler(admitCustomResource))
+func serveResourceClaim(w http.ResponseWriter, r *http.Request) {
+	serve(w, r, newDelegateToV1AdmitHandler(admitResourceClaim))
 }
 
-func admitCustomResource(ar v1.AdmissionReview) *v1.AdmissionResponse {
-	klog.V(2).Info("admitting custom resource")
-	cr := struct {
-		metav1.ObjectMeta
-		Data map[string]string
-	}{}
+func admitResourceClaim(ar v1.AdmissionReview) *v1.AdmissionResponse {
+	klog.V(2).Info("admitting resourceclaims")
+
+	resourceClaimResource := metav1.GroupVersionResource{Group: "resource", Version: "v1beta1", Resource: "resourceclaims"}
+	if ar.Request.Resource != resourceClaimResource {
+		klog.Errorf("expect resource to be %s", resourceClaimResource)
+		return nil
+	}
 
 	var raw []byte
 	if ar.Request.Operation == v1.Delete {
@@ -223,28 +223,46 @@ func admitCustomResource(ar v1.AdmissionReview) *v1.AdmissionResponse {
 	} else {
 		raw = ar.Request.Object.Raw
 	}
-	err := json.Unmarshal(raw, &cr)
-	if err != nil {
+
+	claim := resourceapi.ResourceClaim{}
+	deserializer := codecs.UniversalDeserializer()
+	if _, _, err := deserializer.Decode(raw, nil, &claim); err != nil {
 		klog.Error(err)
 		return toV1AdmissionResponse(err)
 	}
 
 	reviewResponse := v1.AdmissionResponse{}
 	reviewResponse.Allowed = true
-	for k, v := range cr.Data {
-		if k == "webhook-e2e-test" && v == "webhook-disallow" &&
-			(ar.Request.Operation == v1.Create || ar.Request.Operation == v1.Update) {
-			reviewResponse.Allowed = false
-			reviewResponse.Result = &metav1.Status{
-				Reason: "the custom resource contains unwanted data",
-			}
+
+	var errs field.ErrorList
+	for configIndex, config := range claim.Spec.Devices.Config {
+		if config.Opaque == nil || config.Opaque.Driver != DriverName {
+			continue
 		}
-		if k == "webhook-e2e-test" && v == "webhook-nondeletable" && ar.Request.Operation == v1.Delete {
-			reviewResponse.Allowed = false
-			reviewResponse.Result = &metav1.Status{
-				Reason: "the custom resource cannot be deleted because it contains unwanted key and value",
-			}
+
+		fieldPath := field.NewPath("spec", "devices", "config").
+			Index(configIndex).
+			Child("opaque", "parameters")
+
+		decodedConfig, err := runtime.Decode(configapi.Decoder, config.DeviceConfiguration.Opaque.Parameters.Raw)
+		if err != nil {
+			// TODO: common user mistakes like an incorrect API version might cause this to fail in a way that
+			// wouldn't necessarily be an internal error.
+			errs = append(errs, field.InternalError(fieldPath, fmt.Errorf("error decoding: %w", err)))
+			continue
+		}
+		err = decodedConfig.(*configapi.GpuConfig).Validate()
+		if err != nil {
+			errs = append(errs, field.Invalid(fieldPath, decodedConfig, err.Error()))
 		}
 	}
+
+	if err := errs.ToAggregate(); err != nil {
+		reviewResponse.Allowed = false
+		reviewResponse.Result = &metav1.Status{
+			Reason: metav1.StatusReason(err.Error()),
+		}
+	}
+
 	return &reviewResponse
 }
