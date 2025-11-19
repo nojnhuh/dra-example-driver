@@ -1,0 +1,101 @@
+# One pod, four containers
+# Each container asking for different ways to request the equivalent of one total GPU
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpupart-test1
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: gpupart-test1
+  name: gpu-parts
+spec:
+  spec:
+    devices:
+      requests:
+      - name: whole
+        exactly:
+          deviceClassName: gpupart.example.com
+          selectors:
+            - cel:
+                expression: device.attributes["gpupart.example.com"].size == "whole"
+      - name: two-halves
+        exactly:
+          deviceClassName: gpupart.example.com
+          count: 2
+          selectors:
+            - cel:
+                expression: device.attributes["gpupart.example.com"].size == "half"
+      - name: four-quarters
+        exactly:
+          deviceClassName: gpupart.example.com
+          count: 4
+          selectors:
+            - cel:
+                expression: device.attributes["gpupart.example.com"].size == "quarter"
+      - name: one-half
+        exactly:
+          deviceClassName: gpupart.example.com
+          count: 1
+          selectors:
+            - cel:
+                expression: device.attributes["gpupart.example.com"].size == "half"
+      - name: two-quarters
+        exactly:
+          deviceClassName: gpupart.example.com
+          count: 2
+          selectors:
+            - cel:
+                expression: device.attributes["gpupart.example.com"].size == "quarter"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpupart-test1
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+        request: whole
+  - name: ctr1
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+        request: two-halves
+  - name: ctr2
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+        request: four-quarters
+  - name: ctr3
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+        request: one-half
+      - name: gpu
+        request: two-quarters
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: gpu-parts

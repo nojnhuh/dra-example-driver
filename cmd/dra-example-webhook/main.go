@@ -35,6 +35,7 @@ import (
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpupart"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -52,6 +53,10 @@ type validator func(runtime.Object) error
 
 var validProfiles = map[string]profiles.ConfigHandler{
 	gpu.ProfileName: gpu.Profile{},
+	// [profiles.NoopConfigHandler] is used for types which implement no
+	// configuration. Instead of disabling the webhook entirely, this allows
+	// returning errors when any configuration is supplied.
+	gpupart.ProfileName: profiles.NoopConfigHandler{},
 }
 
 func main() {

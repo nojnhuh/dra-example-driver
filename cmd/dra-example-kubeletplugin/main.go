@@ -33,6 +33,7 @@ import (
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpupart"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -65,6 +66,9 @@ type Config struct {
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
 		return gpu.NewProfile(flags.nodeName, flags.numDevices)
+	},
+	gpupart.ProfileName: func(flags Flags) profiles.Profile {
+		return gpupart.NewProfile(flags.nodeName, flags.numDevices)
 	},
 }
 
