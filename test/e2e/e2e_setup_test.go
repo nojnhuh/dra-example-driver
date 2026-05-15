@@ -51,7 +51,7 @@ var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
 var restMapper meta.RESTMapper
 
-// driverPodSelector finds kubelet plugin Pods within an installed driver's release namespace.
+// driverPodSelector finds kubelet plugin Pods within an installed driver's release namespace
 const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
 
 // defaultDeviceClassName is the driver name baked into demo manifests and

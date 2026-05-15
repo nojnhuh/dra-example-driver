@@ -180,7 +180,7 @@ func serveResourceClaim(configDecoder runtime.Decoder, validate validator, drive
 }
 
 // serve handles the http portion of a request prior to handing to an admit
-// function.
+// function
 func serve(w http.ResponseWriter, r *http.Request, ctx context.Context, admit func(context.Context, admissionv1.AdmissionReview) *admissionv1.AdmissionResponse) {
 	logger := klog.FromContext(ctx)
 	var body []byte
